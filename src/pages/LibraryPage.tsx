@@ -4,9 +4,31 @@ import { supabase, q } from '../lib/supabase'
 import { useAsync } from '../hooks/useAsync'
 import { useAuth } from '../app/providers/AuthProvider'
 import type { Folder, TaskRow } from '../types'
+import { importTasks } from '../lib/taskImport'
 type Crumb = { id: string | null; name: string }
 export default function LibraryPage() {
   const { userId } = useAuth()
+  const [importing, setImporting] = useState(false)
+const [importMessage, setImportMessage] = useState('')
+
+const handleImport = async () => {
+  if (!userId || importing) return
+
+  setImporting(true)
+  setImportMessage('')
+
+  try {
+    const result = await importTasks(userId)
+    setImportMessage(result.message)
+    reload()
+  } catch (error) {
+    setImportMessage(
+      error instanceof Error ? error.message : 'Ошибка импорта'
+    )
+  } finally {
+    setImporting(false)
+  }
+}
   const [path, setPath] = useState<Crumb[]>([{ id: null, name: 'Библиотека' }])
   const cur = path[path.length - 1].id
   const [search, setSearch] = useState(''); const [sort, setSort] = useState<'name' | 'date'>('name')
@@ -25,6 +47,19 @@ export default function LibraryPage() {
   return (
     <div className="stack">
       <h1>Библиотека</h1>
+      <div className="card stack">
+  <button
+    className="btn"
+    onClick={handleImport}
+    disabled={importing}
+  >
+    {importing ? 'Импортируем...' : 'Импортировать тесты из файлов'}
+  </button>
+
+  {importMessage && (
+    <p className="muted">{importMessage}</p>
+  )}
+</div>
       <input className="input" placeholder="Поиск заданий" value={search} onChange={e => setSearch(e.target.value)} />
       <div className="row wrap muted">{path.map((c, i) => <button key={i} className="btn sm ghost" onClick={() => setPath(path.slice(0, i + 1))}>{c.name}</button>)}
         <button className="btn sm ghost" onClick={() => setSort(sort === 'name' ? 'date' : 'name')}>Сортировка: {sort === 'name' ? 'по имени' : 'по дате'}</button></div>
