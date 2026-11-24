@@ -56,6 +56,7 @@ export default function TaskEditorPage() {
   const [msg, setMsg] = useState('')
   const [pick, setPick] = useState<string[]>([])
   const [comment, setComment] = useState('')
+  const [dueAt, setDueAt] = useState('')
 
   const { data: task } = useAsync(
     () => (isNew ? Promise.resolve(null) : q<TaskRow>(supabase.from('tasks').select('*').eq('id', id!).single())),
@@ -134,11 +135,17 @@ export default function TaskEditorPage() {
     if (!pick.length) return setMsg('Выбери хотя бы одного ученика')
     try {
       const n = await q<number>(
-        supabase.rpc('assign_task', { p_task: id, p_students: pick, p_comment: comment || null })
+        supabase.rpc('assign_task', {
+          p_task: id,
+          p_students: pick,
+          p_comment: comment || null,
+          p_due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        })
       )
       setMsg(`Выдано: ${n}`)
       setPick([])
       setComment('')
+      setDueAt('')
     } catch (e: any) {
       setMsg(e?.message ?? String(e))
     }
@@ -329,6 +336,17 @@ export default function TaskEditorPage() {
             value={comment}
             onChange={e => setComment(e.target.value)}
           />
+          <label className="stack" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: '0.85em' }}>
+              Срок сдачи (необязательно)
+            </span>
+            <input
+              type="datetime-local"
+              className="input"
+              value={dueAt}
+              onChange={e => setDueAt(e.target.value)}
+            />
+          </label>
           <button className="btn" onClick={issue}>
             Выдать
           </button>

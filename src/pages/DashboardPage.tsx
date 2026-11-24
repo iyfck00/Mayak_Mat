@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, q } from '../lib/supabase'
 import { useAsync } from '../hooks/useAsync'
@@ -31,17 +32,54 @@ function normalizeStudentRelation<T extends { students?: unknown }>(item: T): T 
   }
 }
 
+function CountdownTimer({ targetDate }: { targetDate: string }) {
+  const [timeLeft, setTimeLeft] = useState('')
+
+  useEffect(() => {
+    function update() {
+      const diff = new Date(targetDate).getTime() - Date.now()
+      if (diff <= 0) {
+        setTimeLeft('Занятие начинается!')
+        return
+      }
+
+      const totalSeconds = Math.floor(diff / 1000)
+      const days = Math.floor(totalSeconds / 86400)
+      const hours = Math.floor((totalSeconds % 86400) / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
+
+      if (days > 0) {
+        setTimeLeft(`через ${days} дн. ${hours} ч.`)
+      } else if (hours > 0) {
+        setTimeLeft(`через ${hours} ч. ${minutes} мин.`)
+      } else {
+        const pad = (n: number) => String(n).padStart(2, '0')
+        setTimeLeft(`через ${pad(minutes)}:${pad(seconds)}`)
+      }
+    }
+
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  }, [targetDate])
+
+  return <strong>{timeLeft}</strong>
+}
+
 export default function DashboardPage() {
   const { role, name } = useAuth()
   const t = role === 'teacher'
 
   const { data } = useAsync(async () => {
+    const nowIso = new Date().toISOString()
     const startOfDay = new Date()
     startOfDay.setHours(0, 0, 0, 0)
 
     const endOfDay = new Date(startOfDay)
     endOfDay.setDate(endOfDay.getDate() + 1)
 
+    // Занятия на сегодня
     const rawLessons = await q<LessonRow[]>(
       (supabase.from(t ? 'lessons' : 'my_lessons') as any)
         .select(t ? '*,students(full_name)' : '*')
@@ -49,6 +87,16 @@ export default function DashboardPage() {
         .lt('starts_at', endOfDay.toISOString())
         .neq('status', 'cancelled')
         .order('starts_at')
+    )
+
+    // Ближайшее предстоящее занятие (для отсчёта таймера)
+    const rawUpcoming = await q<LessonRow[]>(
+      (supabase.from(t ? 'lessons' : 'my_lessons') as any)
+        .select(t ? '*,students(full_name)' : '*')
+        .gt('starts_at', nowIso)
+        .neq('status', 'cancelled')
+        .order('starts_at')
+        .limit(1)
     )
 
     const rawRecent = await q<Assignment[]>(
@@ -60,14 +108,32 @@ export default function DashboardPage() {
     )
 
     const lessons = (rawLessons ?? []).map(normalizeStudentRelation)
+    const upcoming = rawUpcoming && rawUpcoming[0] ? normalizeStudentRelation(rawUpcoming[0]) : null
     const recent = (rawRecent ?? []).map(normalizeStudentRelation)
 
-    return { lessons, recent }
+    return { lessons, upcoming, recent }
   }, [role, t])
 
   return (
     <div className="stack">
       <h1>Привет{name ? `, ${name.split(' ')[0]}` : ''}</h1>
+
+      {!t && data?.upcoming && (
+        <div className="card" style={{ borderColor: 'var(--accent, #3b82f6)' }}>
+          <div className="row between">
+            <div>
+              <span className="muted" style={{ fontSize: '0.9em' }}>Ближайшее занятие</span>
+              <div style={{ marginTop: 4 }}>
+                {data.upcoming.topic ? <span>{data.upcoming.topic} · </span> : null}
+                {fmtTime(data.upcoming.starts_at)}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <CountdownTimer targetDate={data.upcoming.starts_at} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h2>Сегодня</h2>
