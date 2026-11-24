@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUserId(null)
       setRole(null)
       setName('')
-      setError('Пользователь с таким Telegram ID не найден в таблице profiles')
+      setError('Пользователь с таким Telegram ID не найден в profiles')
       return
     }
 
@@ -66,9 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         setError(null)
 
-        const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id
-        if (tgUserId) {
-          await loadProfileByTgId(Number(tgUserId))
+        const tg = (window as any).Telegram?.WebApp
+        const rawTgId = tg?.initDataUnsafe?.user?.id
+
+        if (rawTgId) {
+          await loadProfileByTgId(Number(rawTgId))
           return
         }
 
