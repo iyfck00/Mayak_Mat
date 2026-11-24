@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
-import { initData, initTelegram } from '../../lib/telegram'
+import { initTelegram } from '../../lib/telegram'
 import type { Role } from '../../types'
 
 interface Ctx {
@@ -23,18 +23,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadProfile = async (uid: string) => {
+  const loadProfileById = async (uid: string) => {
     const { data, error: profErr } = await supabase
       .from('profiles')
-      .select('role, full_name')
+      .select('id, role, full_name')
       .eq('id', uid)
       .maybeSingle()
 
     if (profErr) throw profErr
 
-    setUserId(uid)
+    setUserId(data?.id ?? uid)
     setRole((data?.role as Role) ?? null)
     setName(data?.full_name ?? '')
+  }
+
+  const loadProfileByTgId = async (tgId: number) => {
+    const { data, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, role, full_name, tg_id')
+      .eq('tg_id', tgId)
+      .maybeSingle()
+
+    if (profErr) throw profErr
+
+    if (!data) {
+      setUserId(null)
+      setRole(null)
+      setName('')
+      setError('Пользователь с таким Telegram ID не найден в таблице profiles')
+      return
+    }
+
+    setUserId(data.id)
+    setRole((data.role as Role) ?? null)
+    setName(data.full_name ?? '')
   }
 
   useEffect(() => {
@@ -44,26 +66,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         setError(null)
 
-        if (initData) {
-          const { data, error: fnError } = await supabase.functions.invoke('telegram-auth', {
-            body: { initData },
-          })
-          if (fnError) throw fnError
-          if (!data?.session) throw new Error(data?.error ?? 'Сессия не получена')
-
-          const { error: sessError } = await supabase.auth.setSession({
-            access_token: data.session.access_token,
-            refresh_token: data.session.refresh_token,
-          })
-          if (sessError) throw sessError
-
-          await loadProfile(data.session.user.id)
+        const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id
+        if (tgUserId) {
+          await loadProfileByTgId(Number(tgUserId))
           return
         }
 
         const { data: existing } = await supabase.auth.getSession()
         if (existing.session?.user) {
-          await loadProfile(existing.session.user.id)
+          await loadProfileById(existing.session.user.id)
         }
       } catch (e: any) {
         setError(e?.message ?? 'Ошибка авторизации')
@@ -81,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
       if (authErr) throw authErr
-      if (data.user) await loadProfile(data.user.id)
+      if (data.user) await loadProfileById(data.user.id)
     } catch (e: any) {
       setError(e?.message ?? 'Ошибка входа')
     } finally {
